@@ -1,0 +1,455 @@
+/* ============================================================
+   HEAT — Heuristic Evaluation Assessment Tool
+   Styled with the BLAU design system (tokens, fonts, motion).
+   See ../blau/styles/variables.css for the source of truth.
+   ============================================================ */
+
+
+/* ── BLAU TOKENS ─────────────────────────────────────────────
+   Mirrors blau/styles/variables.css. Exposed on :root so any
+   inline style or component-scoped CSS can pull from var(--*).
+   Tailwind utilities resolve to the same palette via the inline
+   tailwind.config in index.html.
+   ──────────────────────────────────────────────────────────── */
+:root {
+  /* Surface */
+  --white:        #ffffff;
+  --bg:           #ffffff;
+  --bg-subtle:    #f8f8f7;
+
+  /* Text */
+  --text:         #1a1a1a;
+  --mid:          #555555;
+  --light:        #999999;
+
+  /* Accent — primary blue */
+  --blue:         #0071C5;
+  --blue-hover:   #005da0;
+  --blue-tint:    rgba(0, 113, 197, .08);
+
+  /* Borders */
+  --border:       #e0e0e0;
+  --border-hover: #c8c8c4;
+
+  /* Tag backgrounds */
+  --tag-bg:       #f0f0ef;
+  --tag-bg-hover: #e8e8e6;
+
+  /* Typography */
+  --font:         'Open Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-title:   'Raleway', 'Open Sans', sans-serif;
+}
+
+
+/* ── BASE ────────────────────────────────────────────────── */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Raleway for every heading + dedicated utility class */
+h1, h2, h3, h4, h5, h6,
+.font-display {
+  font-family: var(--font-title);
+  letter-spacing: -0.01em;
+}
+
+
+/* ── ACCESSIBILITY ───────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+:focus:not(:focus-visible) { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  html { scroll-behavior: auto; }
+}
+
+
+/* ── UTILITIES ───────────────────────────────────────────── */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+
+/* ── MOTION ──────────────────────────────────────────────── */
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   }
+}
+.modal-animate {
+  animation: modalIn 0.28s cubic-bezier(.22,.61,.36,1);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+
+/* ── BLAU CARD POLISH ────────────────────────────────────────
+   The S.card token in config.js becomes flat (no shadow). To
+   keep cards from feeling weightless we adopt Blau's hover
+   pattern — a subtle border shift on interactive cards.
+   ──────────────────────────────────────────────────────────── */
+button.bg-white,
+a.bg-white {
+  transition: border-color .2s ease, color .2s ease, background-color .2s ease;
+}
+
+
+/* ── BLAU PILL — PRIMARY BUTTON SWEEP ────────────────────────
+   Recreates the .blau-btn--primary clip-path sweep on any
+   element that opts in by adding `data-blau-pill`. The Heat
+   app picks this up automatically via the S.btnPrimary token.
+   ──────────────────────────────────────────────────────────── */
+[data-blau-pill] {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition: color .35s ease, border-color .2s ease;
+}
+[data-blau-pill]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--blue-hover);
+  clip-path: circle(0% at 0% 50%);
+  transition: clip-path .55s cubic-bezier(.22,.61,.36,1);
+  z-index: -1;
+}
+[data-blau-pill]:hover::after {
+  clip-path: circle(150% at 0% 50%);
+}
+
+
+/* ── FOOTER LINK ────────────────────────────────────────────
+   Matches the calm Blau footer treatment.
+   ──────────────────────────────────────────────────────────── */
+a.blau-footer-link {
+  color: var(--blue);
+  text-decoration: none;
+  transition: color .2s ease;
+}
+a.blau-footer-link:hover { color: var(--blue-hover); }
+
+
+/* ────────────────────────────────────────────────────────────
+   BLAU VR BROWSER LAYER  (mirrors ../../blau/styles/vr.css)
+
+   Activates when <html data-environment="vr"> is set. Heat is
+   audited live inside the headset that's being evaluated, so
+   the flag is always on for this surface.
+
+   See blau/styles/vr.css for the canonical reference and the
+   rationale behind every override (typography, contrast, hit
+   area, motion).
+   ──────────────────────────────────────────────────────────── */
+[data-environment="vr"] {
+  --text:         #111111;
+  --mid:          #3f3f3f;
+  --light:        #7a7a7a;
+  --border:       #d2d2d2;
+  --border-hover: #a8a8a8;
+  --blue:         #005FA8;
+  --blue-hover:   #00477F;
+  --blue-tint:    rgba(0, 95, 168, .12);
+
+  font-size: 18px;
+}
+
+[data-environment="vr"] h1,
+[data-environment="vr"] h2,
+[data-environment="vr"] h3 {
+  font-weight: 700;
+  letter-spacing: -.015em;
+}
+
+[data-environment="vr"] :focus-visible {
+  outline-width: 3px;
+  outline-offset: 4px;
+}
+
+[data-environment="vr"] *,
+[data-environment="vr"] *::before,
+[data-environment="vr"] *::after {
+  transition-duration: 240ms;
+}
+
+
+/* ────────────────────────────────────────────────────────────
+   BLAU PDF REPORT  (printable A4)
+
+   The print stylesheet styles the report window opened from
+   the Review screen ("Visualizar relatório PDF"). The new
+   window applies `data-pdf-report` on <html> so these rules
+   only ever target that surface, never the live app.
+   ──────────────────────────────────────────────────────────── */
+html[data-pdf-report] {
+  background: #ffffff;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+html[data-pdf-report] body {
+  margin: 0;
+  background: #ffffff;
+  color: var(--text);
+}
+
+html[data-pdf-report] .pdf-page {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 18mm 16mm;
+  margin: 0 auto;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+html[data-pdf-report] .pdf-toolbar {
+  position: sticky;
+  top: 0;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  z-index: 10;
+}
+
+html[data-pdf-report] .pdf-toolbar button {
+  background: var(--blue);
+  color: #fff;
+  border: 1.5px solid var(--blue);
+  padding: 8px 16px;
+  border-radius: 100px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s ease;
+}
+html[data-pdf-report] .pdf-toolbar button.secondary {
+  background: #fff;
+  color: var(--mid);
+  border-color: var(--border);
+}
+html[data-pdf-report] .pdf-toolbar button:hover { background: var(--blue-hover); }
+html[data-pdf-report] .pdf-toolbar button.secondary:hover {
+  color: var(--blue);
+  border-color: var(--blue);
+}
+
+html[data-pdf-report] .pdf-eyebrow {
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-bottom: 6px;
+}
+
+html[data-pdf-report] .pdf-title {
+  font-family: var(--font-title);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  margin: 0;
+  color: var(--text);
+}
+
+html[data-pdf-report] .pdf-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background: var(--blue);
+  border-radius: 50%;
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+html[data-pdf-report] .pdf-section {
+  margin-top: 24px;
+}
+html[data-pdf-report] .pdf-section-title {
+  font-family: var(--font-title);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  line-height: 1.15;
+  text-transform: none;
+  color: var(--text);
+  margin: 0 0 14px;
+  padding-bottom: 0;
+}
+
+html[data-pdf-report] .pdf-meta {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 24px;
+  font-size: 12px;
+}
+html[data-pdf-report] .pdf-meta dt {
+  font-size: 10px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-bottom: 2px;
+}
+html[data-pdf-report] .pdf-meta dd {
+  margin: 0;
+  color: var(--text);
+  font-weight: 600;
+}
+
+html[data-pdf-report] .pdf-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+html[data-pdf-report] .pdf-stat {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+html[data-pdf-report] .pdf-stat__num {
+  font-family: var(--font-title);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--blue);
+}
+html[data-pdf-report] .pdf-stat__num--mid     { color: var(--text); }
+html[data-pdf-report] .pdf-stat__num--warm    { color: #d97706; }
+html[data-pdf-report] .pdf-stat__num--critical{ color: #b91c1c; }
+html[data-pdf-report] .pdf-stat__label {
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--light);
+  margin-top: 6px;
+}
+
+html[data-pdf-report] .pdf-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+html[data-pdf-report] .pdf-chart {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+html[data-pdf-report] .pdf-chart img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+html[data-pdf-report] table.pdf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  table-layout: fixed;
+}
+html[data-pdf-report] .pdf-table th,
+html[data-pdf-report] .pdf-table td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+html[data-pdf-report] .pdf-table th {
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--light);
+  font-weight: 600;
+  white-space: nowrap;
+}
+html[data-pdf-report] .pdf-table .pdf-cell-nowrap {
+  white-space: nowrap;
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
+html[data-pdf-report] .pdf-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 100px;
+  background: var(--blue-tint);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  margin-right: 4px;
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+html[data-pdf-report] .pdf-pill--neutral { background: var(--tag-bg); color: var(--mid); }
+html[data-pdf-report] .pdf-pill--sev0    { background: #f1f5f9; color: #475569; }
+html[data-pdf-report] .pdf-pill--sev1    { background: #d1fae5; color: #065f46; }
+html[data-pdf-report] .pdf-pill--sev2    { background: #fef3c7; color: #92400e; }
+html[data-pdf-report] .pdf-pill--sev3    { background: #ffedd5; color: #9a3412; }
+html[data-pdf-report] .pdf-pill--sev4    { background: #fee2e2; color: #991b1b; }
+
+html[data-pdf-report] .pdf-foot {
+  margin-top: 40px;
+  font-size: 10px;
+  color: var(--light);
+  display: flex;
+  justify-content: space-between;
+}
+
+@page {
+  size: A4;
+  margin: 0;
+}
+
+@media print {
+  html[data-pdf-report] .pdf-toolbar { display: none; }
+  html[data-pdf-report] .pdf-page {
+    box-shadow: none;
+    padding: 14mm 16mm;
+    width: 100%;
+    min-height: auto;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  html[data-pdf-report] .pdf-stat     { break-inside: avoid; }
+  html[data-pdf-report] .pdf-chart    { break-inside: avoid; }
+}

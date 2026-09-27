@@ -1,0 +1,1861 @@
+<!DOCTYPE html>
+<!--
+  data-environment="vr" activates the VR browser layer documented in
+  ../blau/styles/vr.css (mirrored into css/styles.css for standalone
+  deploys). Bumps base font size, contrast, touch targets, and slows
+  transitions so the surface stays legible through the headset's lenses.
+-->
+<html lang="en" data-environment="vr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Heat | Ferramenta de Avaliação Heurística</title>
+  <meta name="description" content="Ferramenta de Avaliação Heurística (UX) para AAVIs">
+  <meta name="author" content="Saul Ossorio">
+  
+  <!-- Fonts — Blau design system: Raleway (titles) + Open Sans (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=Raleway:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    /* ─────────────────────────────────────────────────────────
+       BLAU palette mapped onto Tailwind's slate / blue / indigo
+       scales so existing utility classes (text-slate-*,
+       bg-blue-*, etc.) automatically render the Blau aesthetic.
+
+       Tokens come from blau/styles/variables.css. The 100/200
+       blue shades use the rgba blue-tint so subtle backgrounds
+       feel airy rather than chalky.
+       ───────────────────────────────────────────────────────── */
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans:    ['"Open Sans"', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
+            display: ['Raleway', '"Open Sans"', 'sans-serif'],
+          },
+          colors: {
+            slate: {
+              50:  '#fafaf9',
+              100: '#f8f8f7',   /* --bg-subtle */
+              200: '#e0e0e0',   /* --border */
+              300: '#c8c8c4',   /* --border-hover */
+              400: '#999999',   /* --light */
+              500: '#777777',
+              600: '#555555',   /* --mid */
+              700: '#333333',
+              800: '#1a1a1a',   /* --text */
+              900: '#0a0a0a',
+            },
+            blue: {
+              50:  'rgba(0, 113, 197, 0.04)',
+              100: 'rgba(0, 113, 197, 0.08)',  /* --blue-tint */
+              200: 'rgba(0, 113, 197, 0.16)',
+              300: '#7fb8e0',
+              400: '#3a8fce',
+              500: '#0071C5',   /* --blue */
+              600: '#005da0',   /* --blue-hover */
+              700: '#004a82',
+              800: '#003366',
+              900: '#001a33',
+            },
+            indigo: {
+              500: '#0071C5',   /* harmonise old indigo accents with Blau blue */
+              600: '#005da0',
+              700: '#004a82',
+            },
+            blau: {
+              bg:           '#ffffff',
+              subtle:       '#f8f8f7',
+              text:         '#1a1a1a',
+              mid:          '#555555',
+              light:        '#999999',
+              border:       '#e0e0e0',
+              'border-hover': '#c8c8c4',
+              blue:         '#0071C5',
+              'blue-hover': '#005da0',
+              'blue-tint':  'rgba(0, 113, 197, 0.08)',
+              'tag-bg':     '#f0f0ef',
+            },
+          },
+          borderRadius: {
+            xl:  '12px',
+            '2xl': '14px',
+          },
+          boxShadow: {
+            sm: '0 1px 2px rgba(0,0,0,0.04)',
+            DEFAULT: '0 2px 12px rgba(0,0,0,0.06)',
+            md: '0 4px 20px rgba(0, 113, 197, 0.12)',
+            lg: '0 8px 28px rgba(0, 113, 197, 0.15)',
+          },
+          letterSpacing: {
+            widest: '.18em',
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!-- React -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- SheetJS for Excel export -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+
+  <!-- Chart.js for radar + bar charts on the review screen -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <!-- Configuration -->
+  <script src="js/config.js"></script>
+  
+  <!-- Heuristics Data -->
+  <script src="js/heuristics.js"></script>
+  
+  <!-- Main Application -->
+  <script type="text/babel">
+/**
+ * js/app.js — Main React Application
+ *
+ * HEAT — Heuristic Evaluation Assessment Tool
+ * Author: Saul Ossorio · https://saulossorio.com
+ *
+ * Architecture overview
+ * ─────────────────────
+ * This file is a single-file React application that runs via Babel standalone.
+ * It depends on two globals loaded before this script:
+ *   · CONFIG        — defined in js/config.js  (app settings, style tokens)
+ *   · HEURISTIC_SETS — defined in js/heuristics.js (evaluation data)
+ *
+ * Component tree
+ * ──────────────
+ *   App
+ *   ├─ HomeView         (evaluator form + heuristic set selector)
+ *   ├─ PreviewView      (heuristic card grid)
+ *   ├─ DashboardView    (error log list)
+ *   ├─ ReviewView       (summary table + export)
+ *   ├─ Modal            (generic full-screen overlay shell)
+ *   │   ├─ HeuristicModal  (heuristic detail + good/bad examples)
+ *   │   └─ RefModal        (quick-reference sidebar list)
+ *   └─ ErrorModal       (3-step error logging wizard)
+ *       └─ ImageExample (collapsible image viewer with placeholder)
+ *
+ * Overflow strategy
+ * ─────────────────
+ * Hover scale animations (hover:scale-[1.02]) require the scaled element
+ * to have visual space beyond its layout box.  To avoid clipping:
+ *   · View outer wrappers use flex-col WITHOUT overflow-hidden.
+ *   · Only the scrollable mid-section uses overflow-y-auto.
+ *   · Grid content is wrapped in a div with px-0.5 (2 px) — enough room for
+ *     a 2 % scale on ~200 px cards.
+ *   · Button containers get py-1 for vertical scale headroom.
+ *   · S.page in config.js has overflow-x-hidden so the page never shows a
+ *     horizontal scrollbar even if a scaled element momentarily overflows.
+ *   · Modals use position:fixed relative to the viewport, so they always
+ *     cover the full page regardless of container overflow rules.
+ */
+
+const { useState, useRef, useEffect, useMemo } = React;
+
+// ─────────────────────────────────────────────
+// MODAL — generic full-viewport overlay shell
+// All modals are rendered at the root of <App>
+// (outside the scrollable container) so the
+// dark backdrop always covers the full page.
+// ─────────────────────────────────────────────
+function Modal({ children, onClose, size = 'tall' }) {
+  // size = 'tall' → fixed 95vh (used by wizards / long lists)
+  // size = 'auto' → grows to content, capped at 95vh (used by the heuristic
+  //                 detail modal so short content doesn't leave dead space).
+  const heightClass = size === 'auto' ? 'max-h-[95vh]' : 'h-[95vh]';
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-5">
+      {/* Backdrop — clicking closes the modal */}
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      {/* Panel — flex-col so children can use shrink-0 headers/footers
+          with a flex-1 scrollable body in between */}
+      <div className={`relative w-full max-w-5xl ${heightClass} bg-white rounded-2xl shadow-2xl modal-animate overflow-hidden flex flex-col`}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ICONS — outlined SVG icon set
+// All icons use stroke="currentColor" so colour
+// is controlled purely by Tailwind text-* classes.
+// ─────────────────────────────────────────────
+function IconBack()        { return <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>; }
+function IconClose()       { return <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>; }
+function IconPlus()        { return <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>; }
+function IconPlusSmall()   { return <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>; }
+function IconCheck()       { return <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>; }
+function IconCheckCircle() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>; }
+function IconXCircle()     { return <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>; }
+function IconEdit()        { return <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>; }
+function IconTrash()       { return <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>; }
+function IconBook()        { return <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>; }
+function IconDownload()    { return <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>; }
+function IconSend()        { return <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>; }
+function IconLightbulb()   { return <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>; }
+function IconImage()       { return <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>; }
+function IconClipboard()   { return <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>; }
+function IconSpinner()     { return <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>; }
+function IconUpload()      { return <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>; }
+function IconChevronDown() { return <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>; }
+function IconChevronUp()   { return <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>; }
+
+// ─────────────────────────────────────────────
+// IMAGE EXAMPLE
+//
+// Collapsible image viewer used inside heuristic
+// detail cards.  Styled to match its parent card
+// (green for good examples, red for bad).
+//
+// Props
+//   src   {string} — image path from heuristics.js
+//                    (e.g. 'images/nielsen-h1-good.jpg')
+//   label {string} — alt text for the image
+//   theme {'good'|'bad'} — controls accent colour
+//
+// To add images: place the file in the images/ folder
+// using the path already set in heuristics.js, then
+// reload the page.  The placeholder disappears automatically.
+// ─────────────────────────────────────────────
+function ImageExample({ src, label, theme }) {
+  const [open, setOpen]     = useState(false);
+  const [imgErr, setImgErr] = useState(false);
+
+  const isGood = theme === 'good';
+
+  // Colour tokens per theme
+  const tok = isGood
+    ? { btn: 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100/70', border: 'border-emerald-200', bg: 'bg-emerald-50/40', icon: 'text-emerald-300', txt: 'text-emerald-500' }
+    : { btn: 'text-red-500   hover:text-red-600   hover:bg-red-100/70',     border: 'border-red-200',     bg: 'bg-red-50/40',     icon: 'text-red-300',   txt: 'text-red-400'   };
+
+  return (
+    <div className="mt-4 pt-3 border-t border-black/5">
+      {/* Toggle button — subtle, theme-coloured, no solid background */}
+      <button
+        onClick={() => { setOpen(!open); setImgErr(false); }}
+        className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md transition-colors ${tok.btn}`}
+      >
+        <IconImage />
+        {open ? 'Ocultar imagem' : 'Ver exemplo de imagem'}
+        <span>{open ? <IconChevronUp /> : <IconChevronDown />}</span>
+      </button>
+
+      {open && (
+        src && !imgErr ? (
+          /* Real image */
+          <div className="mt-2 rounded-xl overflow-hidden border border-black/10">
+            <img
+              src={src}
+              alt={label}
+              onError={() => setImgErr(true)}
+              className="w-full object-contain max-h-56"
+            />
+          </div>
+        ) : (
+          /* Placeholder — dashed border, theme-tinted */
+          <div className={`mt-2 rounded-xl border-2 border-dashed ${tok.border} ${tok.bg} flex flex-col items-center justify-center py-8 px-4 text-center`}>
+            <svg className={`w-8 h-8 mb-2 ${tok.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <p className={`text-xs font-medium ${tok.txt}`}>Nenhuma imagem adicionada</p>
+            {/* Show expected file path so the user knows where to put the image */}
+            {src && <p className="text-xs text-slate-300 mt-1 font-mono break-all px-2">{src}</p>}
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ERROR MODAL — wizard estilo Typeform (uma pergunta por página)
+//
+// Etapas:
+//   1 — Heurísticas violadas
+//   2 — Classificação do problema  (filtrada pelo tipo do conjunto)
+//   3 — Severidade
+//   4 — Especificidade da heurística
+//   5 — Relevância da heurística para o domínio
+//   6 — Localização
+//   7 — Descrição
+//   8 — Recomendação (opcional)
+//
+// O contexto (fase + tarefa + heurística selecionada) aparece num
+// painel persistente no topo do modal para o avaliador não esquecer
+// onde está nem o que está avaliando — especialmente importante numa
+// sessão dentro do headset, onde scroll é caro.
+// ─────────────────────────────────────────────
+const TOTAL_STEPS = 7;
+function ErrorModal({ heuristics, initial, context, classifications, onClose, onSave }) {
+  const [step, setStep]         = useState(1);
+  const [selH, setSelH]         = useState(initial?.heuristics || []);
+  const [classif, setClassif]   = useState(initial?.classification ?? null);
+  const [sev, setSev]           = useState(initial?.severity ?? null);
+  const [spec, setSpec]         = useState(initial?.specificity ?? null);
+  const [locType, setLocType]   = useState(initial?.locationType || 'text');
+  const [loc, setLoc]           = useState(initial?.location || '');
+  const [desc, setDesc]         = useState(initial?.description || '');
+  const [rec, setRec]           = useState(initial?.recommendation || '');
+  const [errs, setErrs]         = useState({});
+  const [expanded, setExpanded] = useState(new Set());
+  const [showTaskDesc, setShowTaskDesc] = useState(false);
+  const [showHeurInfo, setShowHeurInfo] = useState(false);
+  const fileRef = useRef(null);
+
+  /** Select a single heuristic (radio behavior — one per error) */
+  const toggleH = (h) => {
+    setSelH(selH.find(x => x.id === h.id) ? [] : [h]);
+    setErrs({});
+  };
+
+  /** Toggle the "Remind me" description panel on a heuristic card */
+  const toggleExpand = (id) => {
+    const next = new Set(expanded);
+    next.has(id) ? next.delete(id) : next.add(id);
+    setExpanded(next);
+  };
+
+  /** Valida apenas a pergunta da etapa atual antes de avançar */
+  const validate = () => {
+    const e = {};
+    if (step === 1 && !selH.length)   e.h       = true;
+    if (step === 2 && !classif)       e.classif = true;
+    if (step === 3 && sev === null)   e.sev     = true;
+    if (step === 4 && spec === null)  e.spec    = true;
+    if (step === 5 && !loc.trim())    e.loc     = true;
+    if (step === 6 && !desc.trim())   e.desc    = true;
+    // Etapa 8 (recomendação) é opcional — sem validação.
+    setErrs(e);
+    return !Object.keys(e).length;
+  };
+
+  const next = () => validate() && setStep(step + 1);
+  const save = () => validate() && onSave({
+    heuristics:     selH,
+    classification: classif,
+    severity:       sev,
+    specificity:    spec,
+    locationType:   locType,
+    location:       loc,
+    description:    desc,
+    recommendation: rec,
+  });
+
+  // Keyboard navigation for Likert scale steps (3 = severity, 4 = specificity)
+  React.useEffect(() => {
+    if (step !== 3 && step !== 4) return;
+    const levels = step === 3 ? SEVERITY_LEVELS : SPECIFICITY_LEVELS;
+    const current = step === 3 ? sev : spec;
+    const setter  = step === 3 ? setSev : setSpec;
+    const max     = levels.length - 1;
+    const handler = (e) => {
+      const digit = parseInt(e.key, 10);
+      if (!isNaN(digit) && digit >= 0 && digit <= max) {
+        setter(digit);
+        setErrs({});
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        setter(current === null ? 0 : Math.min(current + 1, max));
+        setErrs({});
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setter(current === null ? max : Math.max(current - 1, 0));
+        setErrs({});
+      } else if (e.key === 'Enter' && current !== null) {
+        e.preventDefault();
+        next();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [step, sev, spec]);
+
+  /** Convert an uploaded file to a base64 data URL stored as the location */
+  const handleFile = (e) => {
+    const f = e.target.files[0];
+    if (f) { const r = new FileReader(); r.onload = (ev) => setLoc(ev.target.result); r.readAsDataURL(f); }
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      {/* ── Cabeçalho ── */}
+      <div className="px-4 md:px-6 pt-4 md:pt-6 pb-4 border-b border-slate-100 shrink-0">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0 flex-1">
+            <h3 className={S.heading2}>{initial ? 'Editar Erro' : 'Registrar Erro'}</h3>
+            <p className="text-xs md:text-sm text-slate-400 mt-0.5 whitespace-nowrap">Etapa {step} de {TOTAL_STEPS}</p>
+          </div>
+          <button onClick={onClose} aria-label="Fechar" className={`shrink-0 p-2 rounded-xl ${S.btn} hover:bg-slate-100`}><IconClose /></button>
+        </div>
+        {(context?.setName || context?.appName) && (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {context?.setName && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 truncate max-w-full">
+                {context.setName}
+              </span>
+            )}
+            {context?.appName && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 truncate max-w-full">
+                {context.appName}
+              </span>
+            )}
+          </div>
+        )}
+        {/* Barra de progresso — uma divisão por etapa */}
+        <div className="flex gap-1.5">
+          {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map(n => (
+            <div key={n} className={`flex-1 h-1.5 rounded-full transition-colors ${step >= n ? 'bg-blue-500' : 'bg-slate-200'}`} />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Scrollable body ── */}
+      <div className="flex-1 overflow-y-auto px-6 py-5">
+
+        {/* ── PAINEL DE CONTEXTO ──────────────────────────────────────
+            Lembrete persistente do que o avaliador está fazendo.
+            Três blocos, sempre na mesma ordem, com cabeçalhos
+            uppercase fixos para o olhar achar rápido:
+
+              · CONTEXTO   → fase + app + conjunto
+              · TAREFA     → (somente Modo Tarefa) com expand opcional
+              · HEURÍSTICA → (a partir da etapa 2) as heurísticas que o
+                              avaliador escolheu na etapa 1, com expand
+                              para reler a descrição completa.
+
+            Cada linha "expansível" tem uma área grande de clique e um
+            ícone de chevron à direita para o gesto ser óbvio mesmo com
+            mira por controle de VR.
+            ─────────────────────────────────────────────────────────── */}
+        {context && (
+          <div className="mb-5 rounded-xl border border-slate-200 bg-white overflow-hidden">
+
+            {/* Fase + tarefa agrupadas */}
+            <div className="px-4 pt-3 pb-3">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className={`shrink-0 w-2 h-2 rounded-full ${context.phaseDot || 'bg-blue-500'}`}></span>
+                <span className="text-[0.65rem] font-semibold uppercase tracking-widest text-slate-500">{context.phaseLabel}</span>
+              </div>
+              {context.taskName && (
+                <button
+                  type="button"
+                  onClick={() => context.taskDescription && setShowTaskDesc(v => !v)}
+                  disabled={!context.taskDescription}
+                  className={`w-full flex items-start gap-2 text-left ${context.taskDescription ? 'cursor-pointer' : 'cursor-default'}`}
+                >
+                  <span className="flex-1 min-w-0">
+                    <span className="block font-semibold text-sm md:text-base text-slate-800 leading-snug">{context.taskName}</span>
+                    {context.taskDescription && showTaskDesc && (
+                      <span className="block mt-1.5 text-xs md:text-sm leading-relaxed text-slate-500">
+                        {context.taskDescription}
+                      </span>
+                    )}
+                  </span>
+                  {context.taskDescription && (
+                    <span className="shrink-0 text-slate-400 mt-0.5">
+                      {showTaskDesc ? <IconChevronUp /> : <IconChevronDown />}
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* Etapa 1 — Heurísticas violadas */}
+        {step === 1 && (
+          <div>
+            <p className={`${S.label} mb-1`}>Qual heurística foi violada? <span className="text-red-500">*</span></p>
+            <p className="text-sm md:text-base text-slate-500 mb-4">Selecione uma heurística</p>
+            {errs.h && <p className="text-red-500 text-sm mb-3">Selecione uma heurística</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {heuristics.map(h => (
+                <div key={h.id} className={`rounded-xl border-2 overflow-hidden ${S.btn} ${selH.find(x => x.id === h.id) ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <button onClick={() => toggleH(h)} className="w-full p-3 text-left">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${selH.find(x => x.id === h.id) ? 'border-blue-500' : 'border-slate-300'}`}>
+                        {selH.find(x => x.id === h.id) && <span className="w-2.5 h-2.5 rounded-full bg-blue-500 block"></span>}
+                      </div>
+                      <span className="text-blue-600 font-bold">{h.id}</span>
+                    </div>
+                    <p className="text-sm md:text-base text-slate-600 mt-1">{h.name}</p>
+                  </button>
+                  {/* Expansor "Lembrar" — mostra a descrição inline */}
+                  <button
+                    onClick={() => toggleExpand(h.id)}
+                    className={`w-full px-3 py-2 text-left text-xs ${S.btn} hover:bg-blue-100 border-t border-slate-100 text-blue-600 font-medium flex items-center gap-1`}
+                  >
+                    <IconLightbulb /> Lembrar
+                  </button>
+                  {expanded.has(h.id) && (
+                    <div className="px-3 py-3 text-xs text-slate-600 bg-blue-50 leading-relaxed">{h.description}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Etapa 2 — Classificação do problema (filtrada pelo tipo do conjunto) */}
+        {step === 2 && (
+          <div className="max-w-3xl mx-auto">
+            <p className={`${S.label} mb-1`}>Como você classifica este problema? <span className="text-red-500">*</span></p>
+            <p className="text-sm md:text-base text-slate-500 mb-4">Esta etiqueta é usada apenas para o estudo de heurísticas.</p>
+            {errs.classif && <p className="text-red-500 text-sm mb-3">Selecione uma classificação</p>}
+            <div className="grid grid-cols-1 gap-3">
+              {classifications.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => { setClassif(c.id); setErrs({}); }}
+                  className={`text-left p-4 rounded-xl border-2 ${S.btn} ${classif === c.id ? `${c.color} border-current shadow-sm` : 'bg-white border-slate-200 hover:border-slate-300'}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="font-bold text-base md:text-lg">{c.label}</div>
+                    <span className="text-xs font-mono opacity-60">({c.code})</span>
+                  </div>
+                  <div className="text-sm opacity-80 mt-1 leading-snug">{c.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Etapa 3 — Severidade */}
+        {step === 3 && (
+          <div className="max-w-3xl mx-auto">
+            <p className={`${S.label} mb-1`}>Quão crítico é este problema? <span className="text-red-500">*</span></p>
+            <p className="text-sm md:text-base text-slate-500 mb-4">Severidade — escala de 0 (sem problema) a 4 (crítico).</p>
+            {errs.sev && <p className="text-red-500 text-sm mb-3">Selecione um nível de severidade</p>}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+              {SEVERITY_LEVELS.map(s => (
+                <button
+                  key={s.level}
+                  onClick={() => { setSev(s.level); setErrs({}); }}
+                  className={`py-3 md:py-4 px-4 md:px-2 rounded-xl border-2 ${S.btn} ${S.btnHover} flex flex-row md:flex-col items-center justify-start md:justify-center gap-3 md:gap-1 ${sev === s.level ? `${s.color} ${s.textColor} border-transparent` : 'bg-white border-slate-200'}`}
+                >
+                  <span className="text-2xl md:text-3xl font-bold leading-none">{s.level}</span>
+                  <span className="text-base md:text-sm font-medium">{s.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Etapa 4 — Especificidade */}
+        {step === 4 && (
+          <div className="max-w-3xl mx-auto">
+            <p className={`${S.label} mb-1`}>Quão específica esta heurística é para contextos AAVI? <span className="text-red-500">*</span></p>
+            <p className="text-sm md:text-base text-slate-500 mb-4">Especificidade — 0 (genérica/universal) a 4 (exclusiva de ambientes imersivos).</p>
+            {errs.spec && <p className="text-red-500 text-sm mb-3">Selecione um nível de especificidade</p>}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+              {SPECIFICITY_LEVELS.map(s => (
+                <button
+                  key={s.level}
+                  onClick={() => { setSpec(s.level); setErrs({}); }}
+                  className={`py-3 md:py-4 px-4 md:px-2 rounded-xl border-2 ${S.btn} ${S.btnHover} flex flex-row md:flex-col items-center justify-start md:justify-center gap-3 md:gap-1 ${spec === s.level ? `${s.color} ${s.textColor} border-transparent` : 'bg-white border-slate-200'}`}
+                >
+                  <span className="text-2xl md:text-3xl font-bold leading-none">{s.level}</span>
+                  <span className="text-base md:text-sm font-medium">{s.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Etapa 5 — Localização */}
+        {step === 5 && (
+          <div className="max-w-3xl mx-auto">
+            <p className={`${S.label} mb-1`}>Onde o problema ocorre? <span className="text-red-500">*</span></p>
+            <p className="text-sm md:text-base text-slate-500 mb-4">Descreva por texto ou anexe uma captura.</p>
+            {errs.loc && <p className="text-red-500 text-sm mb-3">Obrigatório</p>}
+
+            {/* Alternador de tipo */}
+            <div className="inline-flex gap-0.5 p-1 bg-slate-100 rounded-xl mb-3">
+              {[{ key: 'text', label: 'Texto' }, { key: 'photo', label: 'Captura' }].map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => { setLocType(t.key); setLoc(''); setErrs({}); }}
+                  className={`px-4 py-2 rounded-lg text-sm md:text-base font-medium transition-all ${locType === t.key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {locType === 'text' && (
+              <textarea
+                value={loc}
+                onChange={e => { setLoc(e.target.value); setErrs({}); }}
+                placeholder="ex.: Tela inicial → Cabeçalho → Menu de navegação"
+                rows={4}
+                className={`${S.input} resize-none ${errs.loc ? S.inputError : ''}`}
+              />
+            )}
+
+            {locType === 'photo' && (
+              <>
+                <input type="file" ref={fileRef} onChange={handleFile} accept="image/*" className="hidden" />
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className={`w-full py-10 rounded-xl border-2 border-dashed transition-colors flex flex-col items-center justify-center gap-2 text-sm md:text-base font-medium ${
+                    loc
+                      ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                      : errs.loc
+                        ? 'border-red-400 text-slate-500'
+                        : 'border-slate-300 text-slate-500 hover:border-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  {loc ? (
+                    <>
+                      <IconCheckCircle />
+                      Captura anexada — toque para substituir
+                    </>
+                  ) : (
+                    <>
+                      <IconUpload />
+                      Toque para enviar uma captura
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Etapa 6 — Descrição */}
+        {step === 6 && (
+          <div className="max-w-3xl mx-auto">
+            <p className={`${S.label} mb-1`}>Descreva o problema <span className="text-red-500">*</span></p>
+            <p className="text-sm md:text-base text-slate-500 mb-4">Conte o que aconteceu e como afeta o usuário.</p>
+            {errs.desc && <p className="text-red-500 text-sm mb-3">Obrigatório</p>}
+            <textarea
+              value={desc}
+              onChange={e => { setDesc(e.target.value); setErrs({}); }}
+              placeholder="Qual é o problema? Como afeta o usuário?"
+              rows={6}
+              className={`${S.input} resize-none ${errs.desc ? S.inputError : ''}`}
+            />
+          </div>
+        )}
+
+        {/* Etapa 7 — Recomendação */}
+        {step === 7 && (
+          <div className="max-w-3xl mx-auto">
+            <p className={`${S.label} mb-1`}>Sugestão de melhoria <span className="text-slate-400 font-normal">(opcional)</span></p>
+            <p className="text-sm md:text-base text-slate-500 mb-4">Como o problema poderia ser resolvido?</p>
+            <textarea
+              value={rec}
+              onChange={e => setRec(e.target.value)}
+              placeholder="Que mudança resolveria o problema?"
+              rows={5}
+              className={`${S.input} resize-none`}
+            />
+          </div>
+        )}
+
+      </div>
+
+      {/* ── Footer — navigation buttons ── */}
+      <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex gap-3">
+        {step > 1 && (
+          <button onClick={() => setStep(step - 1)} className={`flex-1 ${S.btn} ${S.btnHover} ${S.btnSecondary} ${S.btnSize} hover:bg-slate-200`}>
+            Voltar
+          </button>
+        )}
+        {step < TOTAL_STEPS ? (
+          <button onClick={next} className={`flex-1 ${S.btn} ${S.btnHover} ${S.btnPrimary} ${S.btnSize}`}>
+            Próximo
+          </button>
+        ) : (
+          <button onClick={save} className={`flex-1 ${S.btn} ${S.btnHover} ${S.btnPrimary} ${S.btnSize}`}>
+            Salvar Erro
+          </button>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────
+// CHARTS — review-screen visualisations
+//
+// Renders two charts side-by-side:
+//   · Radar (Web) chart — one axis per heuristic, value = number of
+//     errors that violated it (a 0-error heuristic shows as a point on
+//     the centre, a perfect breach pattern fills the polygon).
+//   · Bar chart — error count broken down by severity level (0–4).
+//
+// Charts are rebuilt on every render via Chart.js.  Existing instances
+// are destroyed first to avoid the "Canvas is already in use" error.
+// We deliberately do NOT plot the P*/PD/PC classification, as the user
+// wants those kept private to the study; they remain in the Excel
+// export so the researcher can analyse them separately.
+// ─────────────────────────────────────────────
+function Charts({ errors, heuristics }) {
+  const radarRef = useRef(null);
+  const barRef   = useRef(null);
+  const radarChart = useRef(null);
+  const barChart   = useRef(null);
+
+  // Aggregate counts per heuristic and per severity
+  const data = useMemo(() => {
+    const perHeuristic = heuristics.map(h => ({
+      label: h.id,
+      count: errors.filter(e => e.heuristics.some(x => x.id === h.id)).length,
+    }));
+    const perSeverity = SEVERITY_LEVELS.map(s => ({
+      label: `${s.level} · ${s.label}`,
+      count: errors.filter(e => e.severity === s.level).length,
+    }));
+    return { perHeuristic, perSeverity };
+  }, [errors, heuristics]);
+
+  useEffect(() => {
+    if (typeof Chart === 'undefined') return;
+
+    // Radar chart
+    if (radarChart.current) radarChart.current.destroy();
+    radarChart.current = new Chart(radarRef.current, {
+      type: 'radar',
+      data: {
+        labels: data.perHeuristic.map(d => d.label),
+        datasets: [{
+          label: 'Erros por heurística',
+          data: data.perHeuristic.map(d => d.count),
+          backgroundColor: 'rgba(59, 130, 246, 0.25)',
+          borderColor:     'rgba(59, 130, 246, 1)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          r: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } },
+        },
+        plugins: { legend: { display: false } },
+      },
+    });
+
+    // Bar chart
+    if (barChart.current) barChart.current.destroy();
+    barChart.current = new Chart(barRef.current, {
+      type: 'bar',
+      data: {
+        labels: data.perSeverity.map(d => d.label),
+        datasets: [{
+          label: 'Erros por severidade',
+          data: data.perSeverity.map(d => d.count),
+          backgroundColor: ['#94a3b8', '#10b981', '#fbbf24', '#f97316', '#dc2626'],
+          borderRadius: 8,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } },
+        plugins: { legend: { display: false } },
+      },
+    });
+
+    return () => {
+      radarChart.current?.destroy();
+      barChart.current?.destroy();
+    };
+  }, [data]);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className={`${S.card} p-5`}>
+        <p className="text-xs text-slate-400 uppercase mb-3 tracking-wider">Perfil de violação de heurísticas</p>
+        <div className="h-72"><canvas ref={radarRef} /></div>
+      </div>
+      <div className={`${S.card} p-5`}>
+        <p className="text-xs text-slate-400 uppercase mb-3 tracking-wider">Distribuição de severidade</p>
+        <div className="h-72"><canvas ref={barRef} /></div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// APP — root component
+//
+// State
+//   view            — which screen is visible
+//   selectedSet     — key into HEURISTIC_SETS
+//   evaluatorInfo   — { name, project, … }
+//   errors          — array of logged error objects
+//   showErrorModal  — bool
+//   editingError    — index of error being edited, or null
+//   showRefModal    — bool (heuristic reference panel)
+//   showHeuristicModal — heuristic object or null
+//   fade            — bool used for cross-fade transition
+//   formErrors      — validation errors for the home form
+//   sendStatus      — 'idle'|'sending'|'sent'|'error'
+//   evalDate        — ISO timestamp frozen at session start
+// ─────────────────────────────────────────────
+function App() {
+  const [view, setView]                     = useState('home');
+  const [selectedSet, setSelectedSet]       = useState('');
+  const [selectedApp, setSelectedApp]       = useState('');
+  const [evaluatorInfo, setEvaluatorInfo]   = useState({});
+  const [errors, setErrors]                 = useState([]);
+  // Modality tracking
+  const [phase, setPhase]                   = useState('exploratory'); // 'exploratory' | 'tasks'
+  const [activeTaskId, setActiveTaskId]     = useState(null);          // task currently being executed (or null)
+  const [completedTasks, setCompletedTasks] = useState({});            // { [taskId]: true }
+  // Modal/UI state
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [editingError, setEditingError]     = useState(null);
+  const [pendingTaskId, setPendingTaskId]   = useState(null);          // task id to attach to the next new error
+  const [showRefModal, setShowRefModal]     = useState(false);
+  const [showHeuristicModal, setShowHeuristicModal] = useState(null);
+  const [fade, setFade]                     = useState(false);
+  const [formErrors, setFormErrors]         = useState({});
+  const [sendStatus, setSendStatus]         = useState('idle');
+  const [evalDate]                          = useState(new Date().toISOString());
+  const [dashTab, setDashTab]               = useState('tasks');          // 'tasks' | 'errors' — only used in task mode
+
+  /** Animated view transition (200 ms opacity cross-fade) */
+  const nav = (v) => { setFade(true); setTimeout(() => { setView(v); setFade(false); }, 200); };
+
+  /** Derived heuristic list for the active set */
+  const heuristics = selectedSet ? HEURISTIC_SETS[selectedSet].heuristics : [];
+
+  /** Tasks for the chosen application (empty array if no app selected yet) */
+  const tasks      = selectedApp ? (TASKS[selectedApp] || []) : [];
+  const appMeta    = APPS.find(a => a.id === selectedApp);
+  const phaseMeta  = EVALUATION_PHASES[phase];
+  const activeTask = tasks.find(t => t.id === activeTaskId) || null;
+  const taskById   = (id) => tasks.find(t => t.id === id) || null;
+
+  /** Validate the home form before advancing to preview */
+  const validateHome = () => {
+    const errs = {};
+    if (!selectedSet) errs.set = true;
+    if (!selectedApp) errs.app = true;
+    EVALUATOR_FIELDS.filter(f => f.required).forEach(f => {
+      if (!evaluatorInfo[f.id]?.trim()) errs[f.id] = true;
+    });
+    setFormErrors(errs);
+    return !Object.keys(errs).length;
+  };
+
+  /** Save or update an error in the errors array.
+   *  New errors automatically inherit the current phase/task context. */
+  const saveError = (err) => {
+    if (editingError !== null) {
+      // Editing — keep id, phase, and task assignment; update everything else.
+      setErrors(errors.map((e, i) => i === editingError ? { ...e, ...err } : e));
+    } else {
+      const taskId = pendingTaskId !== null ? pendingTaskId : (phase === 'tasks' ? activeTaskId : null);
+      setErrors([...errors, {
+        ...err,
+        id:     Date.now(),
+        phase,                       // 'exploratory' | 'tasks'
+        taskId: phase === 'tasks' ? taskId : null,
+      }]);
+    }
+    setShowErrorModal(false);
+    setEditingError(null);
+    setPendingTaskId(null);
+  };
+
+  const delError   = (i) => setErrors(errors.filter((_, idx) => idx !== i));
+  const formatDate     = (iso) => new Date(iso).toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' });
+  const formatDateExport = (iso) => { const d = new Date(iso); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; };
+
+  /** Reset everything — used by the "Nova Sessão" button on the Review screen.
+   *  We force a full page reload so timestamps, charts and refs all start clean. */
+  const resetSession = () => {
+    if (!confirm('Iniciar uma nova sessão do zero? Todos os dados não exportados serão perdidos.')) return;
+    window.location.reload();
+  };
+
+  /** Toggle the "task done" checkbox.
+   *  A task can be marked complete even with zero errors logged — many tasks
+   *  will simply not surface any usability issue, and forcing a synthetic
+   *  "severity 0" entry just to unlock the checkbox pollutes the dataset. */
+  const toggleTaskDone = (taskId) => {
+    setCompletedTasks(s => ({ ...s, [taskId]: !s[taskId] }));
+  };
+
+  /** Build the flat data array used for both Excel export and Sheets submission.
+   *  Includes every captured field — the spreadsheet is the canonical study record. */
+  const getExportData = () => errors.map((e, i) => {
+    const t = taskById(e.taskId);
+    return {
+      'Data':            formatDateExport(evalDate),
+      'Avaliador':       evaluatorInfo.name    || '',
+      'Projeto':         evaluatorInfo.project || '',
+      'Aplicação':       appMeta?.name || '',
+      'Conjunto de Heurísticas': HEURISTIC_SETS[selectedSet]?.name || '',
+      'Erro Nº':         i + 1,
+      'Fase':            e.phase === 'tasks' ? 'Modo Tarefa' : 'Exploração Livre',
+      'ID da Tarefa':    t ? t.id   : '',
+      'Nome da Tarefa':  t ? t.name : '',
+      'Heurísticas':     e.heuristics.map(h => `${h.id}: ${h.name}`).join('; '),
+      'Classificação':   e.classification || '',
+      'Severidade':      e.severity   != null ? `${e.severity} - ${SEVERITY_LEVELS[e.severity].label}`        : '',
+      'Especificidade':  e.specificity != null ? `${e.specificity} - ${SPECIFICITY_LEVELS[e.specificity].label}` : '',
+      'Tipo de Localização': e.locationType,
+      'Localização':     e.locationType === 'text' ? e.location : '[Captura de tela]',
+      'Descrição':       e.description,
+      'Recomendação':    e.recommendation || '',
+    };
+  });
+
+  /** Build the per-task completion sheet rows */
+  const getTaskRows = () => tasks.map((t, i) => ({
+    'Tarefa Nº':        i + 1,
+    'ID da Tarefa':     t.id,
+    'Nome da Tarefa':   t.name,
+    'Duração':          t.duration,
+    'Concluída':        completedTasks[t.id] ? 'Sim' : 'Não',
+    'Erros registrados': errors.filter(e => e.taskId === t.id).length,
+  }));
+
+  /** Download evaluation as .xlsx using SheetJS — two sheets: Errors + Tasks */
+  const exportExcel = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(getExportData()), 'Errors');
+    if (tasks.length) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(getTaskRows()), 'Tasks');
+    }
+    XLSX.writeFile(wb, `evaluation-${Date.now()}.xlsx`);
+  };
+
+
+  /** Open the Blau-styled A4 report in a new tab.
+   *
+   *  Approach: rebuild a self-contained HTML document and grab the two
+   *  Chart.js canvases from the live Review screen as PNG data URLs so
+   *  the new window doesn't need to re-render. Print stylesheet handles
+   *  the A4 layout — the user can save as PDF from the print dialog. */
+  const exportPDF = () => {
+    const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+
+    // Snapshot charts (they only exist while the Review view is mounted).
+    const canvases = document.querySelectorAll('canvas');
+    const radarImg = canvases[0]?.toDataURL('image/png') || '';
+    const barImg   = canvases[1]?.toDataURL('image/png') || '';
+
+    const critical  = errors.filter(e => e.severity >= 3).length;
+    const explCount = errors.filter(e => e.phase === 'exploratory').length;
+    const taskCount = errors.filter(e => e.phase === 'tasks').length;
+    const tasksDone = Object.values(completedTasks).filter(Boolean).length;
+
+    const rowsHtml = errors.map((e, i) => {
+      const t      = taskById(e.taskId);
+      const phaseM = EVALUATION_PHASES[e.phase] || EVALUATION_PHASES.exploratory;
+      const hPill  = e.heuristics.map(h => `<span class="pdf-pill">${escapeHtml(h.id)}</span>`).join('');
+      const sevNum  = e.severity != null
+        ? `<span class="pdf-pill pdf-pill--sev${e.severity}" style="font-size:13px;font-weight:700;padding:4px 10px;">${e.severity}</span>`
+        : '—';
+      return `
+        <tr>
+          <td class="pdf-cell-nowrap" style="text-align:center;">${i + 1}</td>
+          <td class="pdf-cell-nowrap">${hPill}</td>
+          <td style="color:var(--mid);line-height:1.4;">${t ? escapeHtml(t.name) : `<span style="color:var(--light);">${escapeHtml(phaseM.label)}</span>`}</td>
+          <td class="pdf-cell-nowrap" style="text-align:center;">${sevNum}</td>
+          <td style="line-height:1.4;">${escapeHtml(e.description)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const recsHtml = errors
+      .map((e, i) => ({ ...e, num: i + 1 }))
+      .filter(e => e.recommendation)
+      .map(e => {
+        const hPill = e.heuristics.map(h => `<span class="pdf-pill">${escapeHtml(h.id)}</span>`).join('');
+        const loc   = e.locationType === 'text' ? escapeHtml(e.location) : '<em style="color:var(--light);">captura de tela</em>';
+        return `
+          <tr>
+            <td class="pdf-cell-nowrap" style="text-align:center;">${e.num}</td>
+            <td class="pdf-cell-nowrap">${hPill}</td>
+            <td style="color:var(--mid);line-height:1.4;">${loc}</td>
+            <td style="line-height:1.4;">${escapeHtml(e.recommendation)}</td>
+          </tr>
+        `;
+      }).join('');
+
+    const taskRowsHtml = tasks.map((t, i) => {
+      const done = !!completedTasks[t.id];
+      const ct   = errors.filter(e => e.taskId === t.id).length;
+      return `
+        <tr>
+          <td class="pdf-cell-nowrap" style="text-align:center;">${i + 1}</td>
+          <td>${escapeHtml(t.name)}</td>
+          <td class="pdf-cell-nowrap">${escapeHtml(t.duration || '')}</td>
+          <td class="pdf-cell-nowrap">${done ? 'Concluída' : 'Incompleta'}</td>
+          <td class="pdf-cell-nowrap">${ct} ${ct === 1 ? 'erro' : 'erros'}</td>
+        </tr>
+      `;
+    }).join('');
+
+
+    const htmlDoc = `<!DOCTYPE html>
+<html lang="pt-BR" data-pdf-report>
+<head>
+  <meta charset="UTF-8">
+  <title>Relatório de Avaliação Heurística — ${escapeHtml(evaluatorInfo.name || 'Heat')}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=Raleway:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="pdf-toolbar">
+    <button class="secondary" onclick="window.close()">Fechar</button>
+    <button onclick="window.print()">Salvar como PDF</button>
+  </div>
+
+  <div class="pdf-page">
+    <header style="border-bottom:1px solid var(--border);padding-bottom:16px;">
+      <div class="pdf-eyebrow"><span class="pdf-dot"></span>Heuristic Evaluation</div>
+      <h1 class="pdf-title">Relatório de Avaliação Heurística</h1>
+      <p style="margin:8px 0 0;">
+        <span class="pdf-pill">${escapeHtml(HEURISTIC_SETS[selectedSet]?.name || '')}</span>
+        <span class="pdf-pill pdf-pill--neutral">${escapeHtml(appMeta?.name || '')}</span>
+      </p>
+    </header>
+
+    <section class="pdf-section">
+      <h2 class="pdf-section-title">Dados da sessão</h2>
+      <dl class="pdf-meta">
+        <div><dt>Avaliador</dt><dd>${escapeHtml(evaluatorInfo.name || '—')}</dd></div>
+        ${evaluatorInfo.project ? `<div><dt>Projeto</dt><dd>${escapeHtml(evaluatorInfo.project)}</dd></div>` : ''}
+        <div><dt>Data</dt><dd>${escapeHtml(formatDate(evalDate))}</dd></div>
+        <div><dt>Aplicação</dt><dd>${escapeHtml(appMeta?.name || '—')}</dd></div>
+        <div><dt>Conjunto de heurísticas</dt><dd>${escapeHtml(HEURISTIC_SETS[selectedSet]?.name || '—')}</dd></div>
+      </dl>
+    </section>
+
+    <section class="pdf-section">
+      <h2 class="pdf-section-title">Visão geral</h2>
+      <div class="pdf-stats">
+        <div class="pdf-stat">
+          <div class="pdf-stat__num">${errors.length}</div>
+          <div class="pdf-stat__label">Total de erros</div>
+        </div>
+        <div class="pdf-stat">
+          <div class="pdf-stat__num pdf-stat__num--critical">${critical}</div>
+          <div class="pdf-stat__label">Críticos (≥3)</div>
+        </div>
+        <div class="pdf-stat">
+          <div class="pdf-stat__num pdf-stat__num--mid">${explCount}</div>
+          <div class="pdf-stat__label">Da exploração livre</div>
+        </div>
+        <div class="pdf-stat">
+          <div class="pdf-stat__num pdf-stat__num--mid">${taskCount}</div>
+          <div class="pdf-stat__label">Das tarefas</div>
+        </div>
+      </div>
+    </section>
+
+    ${(radarImg || barImg) ? `
+    <section class="pdf-section">
+      <h2 class="pdf-section-title">Gráficos</h2>
+      <div class="pdf-charts">
+        ${radarImg ? `<div class="pdf-chart"><div class="pdf-eyebrow">Perfil de violação</div><img src="${radarImg}" alt="Radar — violações por heurística"></div>` : ''}
+        ${barImg   ? `<div class="pdf-chart"><div class="pdf-eyebrow">Distribuição de severidade</div><img src="${barImg}" alt="Barras — severidade"></div>` : ''}
+      </div>
+    </section>
+    ` : ''}
+
+    ${tasks.length ? `
+    <section class="pdf-section">
+      <h2 class="pdf-section-title">Tarefas</h2>
+      <table class="pdf-table">
+        <thead>
+          <tr>
+            <th style="width:10%;text-align:center;">Erro</th>
+            <th style="width:33%;">Tarefa</th>
+            <th style="width:17%;">Duração</th>
+            <th style="width:23%;">Estado</th>
+            <th style="width:17%;">Erros</th>
+          </tr>
+        </thead>
+        <tbody>${taskRowsHtml}</tbody>
+      </table>
+    </section>
+    ` : ''}
+
+    <section class="pdf-section">
+      <h2 class="pdf-section-title">Problemas identificados</h2>
+      <table class="pdf-table">
+        <thead>
+          <tr>
+            <th style="width:10%;text-align:center;">Erro</th>
+            <th style="width:14%;">Heurística</th>
+            <th style="width:25%;">Tarefa</th>
+            <th style="width:18%;text-align:center;">Severidade</th>
+            <th style="width:33%;">Problema</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </section>
+
+    ${recsHtml ? `
+    <section class="pdf-section">
+      <h2 class="pdf-section-title">Recomendações</h2>
+      <table class="pdf-table">
+        <thead>
+          <tr>
+            <th style="width:10%;text-align:center;">Erro</th>
+            <th style="width:17%;">Heurística</th>
+            <th style="width:40%;">Localização</th>
+            <th style="width:33%;">Recomendação</th>
+          </tr>
+        </thead>
+        <tbody>${recsHtml}</tbody>
+      </table>
+    </section>
+    ` : ''}
+
+    <footer class="pdf-foot">
+      <span>${CONFIG.version} · ${escapeHtml(CONFIG.author)}</span>
+      <span>Gerado em ${escapeHtml(formatDate(evalDate))}</span>
+    </footer>
+  </div>
+</body>
+</html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) {
+      alert('Não foi possível abrir o relatório. Permita janelas pop-up para este site e tente novamente.');
+      return;
+    }
+    w.document.open();
+    w.document.write(htmlDoc);
+    w.document.close();
+  };
+
+  /** POST results to the configured Google Apps Script endpoint */
+  const sendResults = async () => {
+    if (sendStatus === 'sending' || sendStatus === 'sent') return;
+    if (!CONFIG.googleSheetsUrl) { alert('Google Sheets URL not configured in js/config.js'); return; }
+    setSendStatus('sending');
+    try {
+      const res = await fetch(CONFIG.googleSheetsUrl, {
+        method: 'POST',
+        body: JSON.stringify({
+          evaluator:     evaluatorInfo,
+          application:   appMeta?.name || '',
+          heuristicSet:  HEURISTIC_SETS[selectedSet]?.name || '',
+          date:          formatDateExport(evalDate),
+          errors:        getExportData(),
+          tasks:         getTaskRows(),
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const payload = await res.json();
+      if (!payload.success) throw new Error(payload.error || 'O servidor retornou falha.');
+      setSendStatus('sent');
+    } catch (err) {
+      console.error('[HEAT] Erro ao enviar:', err.message);
+      setSendStatus('error');
+    }
+  };
+
+  return (
+    <div className={S.page}>
+      {/* ════════════════════════════════════
+          MAIN CONTENT AREA
+          overflow-x on S.page prevents horizontal
+          scrollbars when buttons scale on hover.
+          Views intentionally have NO overflow-hidden
+          so scaled children aren't clipped.
+          ════════════════════════════════════ */}
+      <div className={`${S.container} ${fade ? 'opacity-0' : 'opacity-100'} transition-opacity duration-200`}>
+
+        {/* ── HOME ── */}
+        {view === 'home' && (
+          <div className="flex-1 flex items-center justify-center">
+            <div className={`${S.card} p-6 md:p-10 w-full max-w-xl`}>
+              <div className="text-center mb-8">
+                {/* Blau brand dot — flat blue circle, mirrors .blau-dot--hero */}
+                <div className="w-14 h-14 mx-auto mb-5 rounded-full bg-blue-500 flex items-center justify-center text-white">
+                  <IconClipboard />
+                </div>
+                <p className="text-xs uppercase tracking-widest text-slate-400 mb-2">Heuristic Evaluation</p>
+                <h1 className={S.heading1}>Heat</h1>
+                <p className={`${S.textMuted} mt-2`}>Ferramenta de Avaliação Heurística</p>
+              </div>
+              <div className="space-y-5">
+                {/* Dynamic evaluator fields from config.js */}
+                {EVALUATOR_FIELDS.map(f => (
+                  <div key={f.id}>
+                    <label className={`block ${S.label} mb-2`}>
+                      {f.label}
+                      {/* "(opcional)" só aparece no rótulo, nunca no placeholder */}
+                      {!f.required && <span className="text-slate-400 font-normal"> (opcional)</span>}
+                      {f.required  && <span className="text-red-500"> *</span>}
+                    </label>
+                    <input
+                      type="text"
+                      value={evaluatorInfo[f.id] || ''}
+                      onChange={e => {
+                        setEvaluatorInfo({ ...evaluatorInfo, [f.id]: e.target.value });
+                        setFormErrors({ ...formErrors, [f.id]: null });
+                      }}
+                      placeholder={f.placeholder}
+                      className={`${S.input} ${formErrors[f.id] ? S.inputError : ''}`}
+                    />
+                    {formErrors[f.id] && <p className="mt-2 text-red-500 text-sm">Obrigatório</p>}
+                  </div>
+                ))}
+
+                {/* Selecionador de aplicação — define a lista de tarefas */}
+                <div>
+                  <label className={`block ${S.label} mb-2`}>
+                    Aplicação <span className="text-red-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {APPS.map(a => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => { setSelectedApp(a.id); setFormErrors({ ...formErrors, app: null }); }}
+                        className={`text-left p-4 rounded-xl border-2 ${S.btn} ${selectedApp === a.id ? 'border-blue-400 bg-blue-50' : `border-slate-200 hover:border-slate-300 ${formErrors.app ? 'border-red-300' : ''}`}`}
+                      >
+                        <p className="font-semibold text-slate-800">{a.name}</p>
+                        <p className="text-xs text-slate-500 mt-1 leading-snug">{a.description}</p>
+                      </button>
+                    ))}
+                  </div>
+                  {formErrors.app && <p className="mt-2 text-red-500 text-sm">Selecione o ambiente que você irá avaliar</p>}
+                </div>
+
+                {/* Seletor de conjunto de heurísticas */}
+                <div>
+                  <label className={`block ${S.label} mb-2`}>
+                    Conjunto de heurísticas <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={selectedSet}
+                    onChange={e => { setSelectedSet(e.target.value); setFormErrors({ ...formErrors, set: null }); }}
+                    className={`${S.input} cursor-pointer ${formErrors.set ? S.inputError : ''}`}
+                  >
+                    <option value="">Selecione um conjunto…</option>
+                    {Object.entries(HEURISTIC_SETS).map(([k, v]) => (
+                      <option key={k} value={k}>{v.name}</option>
+                    ))}
+                  </select>
+                  {formErrors.set && <p className="mt-2 text-red-500 text-sm">Obrigatório</p>}
+                </div>
+
+                <button onClick={() => validateHome() && nav('preview')} className={`w-full ${S.btn} ${S.btnHover} ${S.btnPrimary} ${S.btnSize}`}>
+                  Continuar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── PREVIEW — heuristic card grid ── */}
+        {view === 'preview' && (
+          <div className="flex-1 flex flex-col">
+            {/* Header */}
+            <div className={`${S.card} p-4 mb-4 flex items-center shrink-0`}>
+              <button onClick={() => nav('home')} className={`p-3 rounded-xl ${S.btn} hover:bg-slate-100`}><IconBack /></button>
+              <h2 className={`flex-1 text-center ${S.heading2} pr-12`}>{HEURISTIC_SETS[selectedSet]?.name}</h2>
+            </div>
+            <p className={`${S.textMuted} text-center mb-4 shrink-0`}>Toque em qualquer cartão para ver detalhes</p>
+
+            {/* Grid — px-0.5 gives 2 px of room so edge cards' scale animation isn't clipped */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-0.5 pb-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                  {heuristics.map(h => (
+                    <button
+                      key={h.id}
+                      onClick={() => setShowHeuristicModal(h)}
+                      className={`${S.card} p-4 text-left ${S.btn} ${S.btnHover} flex flex-col`}
+                    >
+                      <span className="text-blue-600 font-bold text-lg mb-2">{h.id}</span>
+                      <p className="text-sm text-slate-700">{h.name}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* py-1 gives vertical headroom for the scale animation */}
+            <div className="shrink-0 mt-4 py-1">
+              <button onClick={() => nav('dashboard')} className={`w-full ${S.btn} ${S.btnHover} ${S.btnPrimary} ${S.btnSize}`}>
+                Iniciar Avaliação
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── DASHBOARD — registro de erros ── */}
+        {view === 'dashboard' && (
+          <div className="flex-1 flex flex-col">
+            {/* Cabeçalho */}
+            <div className={`${S.card} p-4 mb-4 flex items-center justify-between shrink-0`}>
+              <button onClick={() => nav('preview')} aria-label="Voltar" className={`p-3 rounded-xl ${S.btn} hover:bg-slate-100`}><IconBack /></button>
+              <div className="text-center">
+                <h2 className={S.heading2}>Avaliação</h2>
+                <p className={S.textMuted}>
+                  {errors.length} {errors.length === 1 ? 'erro registrado' : 'erros registrados'} · {appMeta?.name}
+                </p>
+              </div>
+              <button onClick={() => setShowRefModal(true)} aria-label="Abrir referência de heurísticas" className={`p-3 rounded-xl ${S.btn} hover:bg-blue-100 text-blue-600`}><IconBook /></button>
+            </div>
+
+            {/* Alternador de modalidade — Exploração Livre ↔ Modo Tarefa */}
+            <div className={`${S.card} p-4 mb-4 shrink-0`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className={`shrink-0 w-3 h-3 rounded-full self-center ${phaseMeta.dotColor}`}></span>
+                  <div>
+                    <p className="text-xs text-slate-400 uppercase tracking-wider">Modalidade atual</p>
+                    <p className="font-semibold text-slate-800 text-base md:text-lg">
+                      {phaseMeta.label}
+                      {phase === 'tasks' && activeTask && <span className="text-slate-500 font-normal"> · {activeTask.name}</span>}
+                    </p>
+                  </div>
+                </div>
+                <div className="inline-flex gap-0.5 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    onClick={() => { setPhase('exploratory'); setActiveTaskId(null); }}
+                    className={`px-4 py-2 rounded-lg text-sm md:text-base font-medium transition-all ${phase === 'exploratory' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >Exploração Livre</button>
+                  <button
+                    onClick={() => setPhase('tasks')}
+                    className={`px-4 py-2 rounded-lg text-sm md:text-base font-medium transition-all ${phase === 'tasks' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >Modo Tarefa</button>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Modo Tarefa: barra de abas Tarefas / Erros ── */}
+            {phase === 'tasks' && (
+              <div className={`${S.card} mb-4 shrink-0 overflow-hidden`}>
+                {/* Abas */}
+                <div className="flex border-b border-slate-200">
+                  <button
+                    onClick={() => setDashTab('tasks')}
+                    className={`flex-1 py-3 text-sm md:text-base font-semibold transition-colors ${dashTab === 'tasks' ? 'text-violet-700 border-b-2 border-violet-500 bg-violet-50' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    Tarefas
+                    <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                      {Object.values(completedTasks).filter(Boolean).length}/{tasks.length}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setDashTab('errors')}
+                    className={`flex-1 py-3 text-sm md:text-base font-semibold transition-colors ${dashTab === 'errors' ? 'text-violet-700 border-b-2 border-violet-500 bg-violet-50' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    Erros registrados
+                    {errors.length > 0 && (
+                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700">{errors.length}</span>
+                    )}
+                  </button>
+                </div>
+
+                {/* Conteúdo da aba Tarefas */}
+                {dashTab === 'tasks' && (
+                  <div className="p-4">
+                    <div className="space-y-2">
+                      {tasks.map((t, i) => {
+                        const done   = !!completedTasks[t.id];
+                        const active = activeTaskId === t.id && !done;
+                        const errCt  = errors.filter(e => e.taskId === t.id).length;
+                        return (
+                          <div
+                            key={t.id}
+                            className={`rounded-xl border-2 p-3 md:p-4 transition-all ${done ? 'border-emerald-200 bg-emerald-50/40 opacity-70' : active ? 'border-violet-400 bg-violet-50' : 'border-slate-200 hover:border-slate-300'}`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <button
+                                onClick={() => {
+                                  const willBeDone = !done;
+                                  toggleTaskDone(t.id);
+                                  if (willBeDone && activeTaskId === t.id) setActiveTaskId(null);
+                                }}
+                                aria-label={done ? 'Desmarcar tarefa' : 'Marcar tarefa como concluída'}
+                                className={`mt-0.5 w-8 h-8 rounded-lg border-2 flex items-center justify-center shrink-0 ${S.btn} ${done ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-emerald-400'}`}
+                              >
+                                {done && <IconCheck />}
+                              </button>
+                              <button
+                                onClick={() => { if (!done) setActiveTaskId(active ? null : t.id); }}
+                                disabled={done}
+                                className={`flex-1 text-left ${done ? 'cursor-default' : ''}`}
+                              >
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-mono text-slate-400">#{i + 1}</span>
+                                  <span className={`font-semibold text-base md:text-lg ${done ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{t.name}</span>
+                                  <span className="text-xs text-slate-400">{t.duration}</span>
+                                  {errCt > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{errCt} {errCt === 1 ? 'erro' : 'erros'}</span>}
+                                  {active && <span className="text-xs px-2 py-0.5 rounded-full bg-violet-200 text-violet-800 font-semibold">Ativa</span>}
+                                  {done   && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-800 font-semibold">Concluída</span>}
+                                </div>
+                                <p className="text-sm md:text-base text-slate-500 mt-1 leading-relaxed">{t.description}</p>
+                              </button>
+                              {!done && (
+                                <button
+                                  onClick={() => {
+                                    setActiveTaskId(t.id);
+                                    setPendingTaskId(t.id);
+                                    setEditingError(null);
+                                    setShowErrorModal(true);
+                                  }}
+                                  className={`shrink-0 px-4 py-2 rounded-lg text-sm md:text-base font-medium ${S.btn} bg-violet-100 text-violet-700 hover:bg-violet-200 flex items-center gap-1`}
+                                >
+                                  <IconPlusSmall /> Registrar erro
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Conteúdo da aba Erros */}
+                {dashTab === 'errors' && (
+                  <div className="p-4">
+                    {errors.length === 0 ? (
+                      <div className="min-h-[160px] flex flex-col items-center justify-center text-center py-8">
+                        <div className={`w-14 h-14 mb-3 rounded-2xl bg-violet-100 text-violet-600 flex items-center justify-center`}><IconClipboard /></div>
+                        <p className="font-semibold text-slate-700">Nenhum erro registrado ainda</p>
+                        <p className={`${S.textMuted} mt-1`}>Use <span className="font-semibold text-violet-700">Registrar erro</span> na aba Tarefas.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {errors.map((err, i) => {
+                          const errPhaseMeta = EVALUATION_PHASES[err.phase] || EVALUATION_PHASES.exploratory;
+                          const errTask      = taskById(err.taskId);
+                          return (
+                            <div key={err.id} className={`${S.card} p-4 ${S.btn} hover:shadow-md`}>
+                              <div className="flex items-start gap-3">
+                                <span className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-base font-bold ${SEVERITY_LEVELS[err.severity].color} ${SEVERITY_LEVELS[err.severity].textColor}`}>
+                                  {err.severity}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex flex-wrap gap-1 mb-1">
+                                    {err.heuristics.map(h => <span key={h.id} className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 text-xs">{h.id}</span>)}
+                                    {err.classification && <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-mono">{err.classification}</span>}
+                                    {err.specificity != null && <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-xs">esp {err.specificity}</span>}
+                                    <span className={`px-2 py-0.5 rounded text-xs border ${errPhaseMeta.color}`}>
+                                      {errPhaseMeta.label}{errTask ? ` · ${errTask.name}` : ''}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm md:text-base text-slate-600 line-clamp-2">{err.description}</p>
+                                </div>
+                                <div className="flex gap-1 shrink-0">
+                                  <button onClick={() => { setEditingError(i); setPendingTaskId(null); setShowErrorModal(true); }} aria-label="Editar erro" className={`p-2 rounded-lg ${S.btn} hover:bg-slate-100 text-slate-500`}><IconEdit /></button>
+                                  <button onClick={() => delError(i)} aria-label="Excluir erro" className={`p-2 rounded-lg ${S.btn} hover:bg-red-50 text-red-400`}><IconTrash /></button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Modo Exploração Livre: lista de erros com título ── */}
+            {phase === 'exploratory' && (
+              <div className="flex-1 overflow-y-auto">
+                <div className="px-0.5 pb-2">
+                  {errors.length > 0 && (
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2 px-1">
+                      Erros registrados · {errors.length}
+                    </p>
+                  )}
+                  {errors.length === 0 ? (
+                    <button
+                      onClick={() => { setEditingError(null); setPendingTaskId(null); setShowErrorModal(true); }}
+                      className={`w-full min-h-[200px] bg-white border-[1.5px] border-dashed border-blue-300 rounded-xl flex flex-col items-center justify-center ${S.btn} hover:border-blue-500`}
+                    >
+                      <div className="w-14 h-14 mb-4 rounded-full bg-blue-500 text-white flex items-center justify-center"><IconPlus /></div>
+                      <p className={S.heading2}>Registre o primeiro erro</p>
+                      <p className={`${S.textMuted} mt-2`}>Será marcado como: Exploração Livre</p>
+                    </button>
+                  ) : (
+                    <div className="space-y-3">
+                      {errors.map((err, i) => {
+                        const errPhaseMeta = EVALUATION_PHASES[err.phase] || EVALUATION_PHASES.exploratory;
+                        const errTask      = taskById(err.taskId);
+                        return (
+                          <div key={err.id} className={`${S.card} p-4 ${S.btn} hover:shadow-md`}>
+                            <div className="flex items-start gap-3">
+                              <span className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-base font-bold ${SEVERITY_LEVELS[err.severity].color} ${SEVERITY_LEVELS[err.severity].textColor}`}>
+                                {err.severity}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap gap-1 mb-1">
+                                  {err.heuristics.map(h => <span key={h.id} className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 text-xs">{h.id}</span>)}
+                                  {err.classification && <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-mono">{err.classification}</span>}
+                                  {err.specificity != null && <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-700 text-xs">esp {err.specificity}</span>}
+                                  <span className={`px-2 py-0.5 rounded text-xs border ${errPhaseMeta.color}`}>
+                                    {errPhaseMeta.label}{errTask ? ` · ${errTask.name}` : ''}
+                                  </span>
+                                </div>
+                                <p className="text-sm md:text-base text-slate-600 line-clamp-2">{err.description}</p>
+                              </div>
+                              <div className="flex gap-1 shrink-0">
+                                <button onClick={() => { setEditingError(i); setPendingTaskId(null); setShowErrorModal(true); }} aria-label="Editar erro" className={`p-2 rounded-lg ${S.btn} hover:bg-slate-100 text-slate-500`}><IconEdit /></button>
+                                <button onClick={() => delError(i)} aria-label="Excluir erro" className={`p-2 rounded-lg ${S.btn} hover:bg-red-50 text-red-400`}><IconTrash /></button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Botões de ação inferiores — py-1 dá folga para o efeito de hover */}
+            <div className="space-y-3 mt-4 shrink-0 py-1">
+              {/* "Adicionar Erro" só aparece em Exploração Livre.
+                  No Modo Tarefa, todo erro precisa partir do botão "Registrar erro"
+                  da própria tarefa (garante o vínculo erro ↔ tarefa). */}
+              {phase === 'exploratory' && errors.length > 0 && (
+                <button
+                  onClick={() => { setEditingError(null); setPendingTaskId(null); setShowErrorModal(true); }}
+                  className={`w-full ${S.btn} ${S.btnOutline} ${S.btnSize} flex items-center justify-center gap-2 hover:shadow-md`}
+                >
+                  <IconPlusSmall /> Adicionar Erro (Exploração Livre)
+                </button>
+              )}
+              {errors.length > 0 && (
+                <button onClick={() => nav('review')} className={`w-full ${S.btn} ${S.btnHover} ${S.btnPrimary} ${S.btnSize}`}>
+                  Finalizar
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── REVIEW — resumo + exportação ── */}
+        {view === 'review' && (
+          <div className="flex-1 flex flex-col">
+            {/* Cabeçalho */}
+            <div className={`${S.card} p-4 mb-4 flex items-center shrink-0`}>
+              <button onClick={() => nav('dashboard')} aria-label="Voltar" className={`p-3 rounded-xl ${S.btn} hover:bg-slate-100`}><IconBack /></button>
+              <h2 className={`flex-1 text-center ${S.heading2} pr-12`}>Relatório de Avaliação</h2>
+            </div>
+
+            {/* Conteúdo rolável */}
+            <div className="flex-1 overflow-y-auto space-y-4 pb-2">
+              {/* Metadados do avaliador */}
+              <div className={`${S.card} p-5`}>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div><p className="text-xs text-slate-400 uppercase mb-1">Avaliador</p><p className="text-sm md:text-base font-medium text-slate-700">{evaluatorInfo.name}</p></div>
+                  {evaluatorInfo.project && <div><p className="text-xs text-slate-400 uppercase mb-1">Projeto</p><p className="text-sm md:text-base font-medium text-slate-700">{evaluatorInfo.project}</p></div>}
+                  <div><p className="text-xs text-slate-400 uppercase mb-1">Aplicação</p><p className="text-sm md:text-base font-medium text-slate-700">{appMeta?.name}</p></div>
+                  <div><p className="text-xs text-slate-400 uppercase mb-1">Conjunto</p><p className="text-sm md:text-base font-medium text-slate-700">{HEURISTIC_SETS[selectedSet]?.name}</p></div>
+                  <div><p className="text-xs text-slate-400 uppercase mb-1">Data</p><p className="text-sm md:text-base font-medium text-slate-700">{formatDate(evalDate)}</p></div>
+                </div>
+              </div>
+
+              {/* Estatísticas */}
+              <div className={`${S.card} p-5`}>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                  <div><p className="text-3xl font-bold text-blue-600">{errors.length}</p><p className={S.textMuted}>Total de erros</p></div>
+                  <div><p className="text-3xl font-bold text-orange-500">{errors.filter(e => e.severity >= 3).length}</p><p className={S.textMuted}>Críticos (≥3)</p></div>
+                  <div><p className="text-3xl font-bold text-sky-600">{errors.filter(e => e.phase === 'exploratory').length}</p><p className={S.textMuted}>Da exploração</p></div>
+                  <div><p className="text-3xl font-bold text-violet-600">{errors.filter(e => e.phase === 'tasks').length}</p><p className={S.textMuted}>Das tarefas</p></div>
+                </div>
+              </div>
+
+              {/* Gráficos — radar + barra */}
+              {errors.length > 0 && (
+                <Charts errors={errors} heuristics={heuristics} />
+              )}
+
+              {/* Resumo de conclusão das tarefas */}
+              <div className={`${S.card} p-5`}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-display text-xl md:text-2xl font-semibold text-slate-800 tracking-tight">Tarefas</h3>
+                  <p className="text-xs md:text-sm text-slate-500">
+                    {Object.values(completedTasks).filter(Boolean).length}/{tasks.length} concluídas
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {tasks.map((t, i) => {
+                    const done  = !!completedTasks[t.id];
+                    const errCt = errors.filter(e => e.taskId === t.id).length;
+                    return (
+                      <div key={t.id} className="flex items-center gap-2 text-sm md:text-base flex-wrap md:flex-nowrap py-1">
+                        <span className="text-xs font-mono text-slate-400 shrink-0 w-6 text-center">#{i + 1}</span>
+                        <span className={`flex-1 min-w-0 truncate ${done ? 'text-slate-500' : 'text-slate-700'}`}>{t.name}</span>
+                        <span className="text-xs text-slate-400 shrink-0 w-14 text-right">{t.duration}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0 whitespace-nowrap">{errCt} {errCt === 1 ? 'erro' : 'erros'}</span>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 whitespace-nowrap ${done ? 'bg-emerald-50 text-emerald-700 border-emerald-300' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
+                          {done ? '✓ Concluída' : '✗ Incompleta'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Tabela de erros */}
+              <div className={`${S.card} p-5`}>
+                <h3 className="font-display text-xl md:text-2xl font-semibold text-slate-800 tracking-tight mb-4">Problemas identificados</h3>
+                <div className="overflow-x-auto -mx-5 px-5">
+                <table className="text-left text-sm md:text-base" style={{tableLayout:'fixed', width:'100%', minWidth:'760px'}}>
+                  <thead>
+                    <tr className="border-b-2 border-slate-200">
+                      <th className="py-2 px-2 text-slate-500 whitespace-nowrap text-center" style={{width:'7%'}}>Erro</th>
+                      <th className="py-2 px-2 text-slate-500 whitespace-nowrap" style={{width:'13%'}}>Heurística</th>
+                      <th className="py-2 px-2 text-slate-500 whitespace-nowrap" style={{width:'22%'}}>Tarefa</th>
+                      <th className="py-2 px-2 text-slate-500 whitespace-nowrap text-center" style={{width:'9%'}}>Sev</th>
+                      <th className="py-2 px-2 text-slate-500 whitespace-nowrap text-center" style={{width:'8%'}}>Esp</th>
+                      <th className="py-2 px-2 text-slate-500 whitespace-nowrap" style={{width:'8%'}}>Class</th>
+                      <th className="py-2 px-2 text-slate-500 whitespace-nowrap" style={{width:'33%'}}>Descrição</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {errors.map((e, i) => {
+                      const t = taskById(e.taskId);
+                      const errPhaseMeta = EVALUATION_PHASES[e.phase] || EVALUATION_PHASES.exploratory;
+                      return (
+                        <tr key={e.id} className="border-b border-slate-100">
+                          <td className="py-3 px-2 text-center">{i + 1}</td>
+                          <td className="py-3 px-2">
+                            <div className="flex flex-wrap gap-1">
+                              {e.heuristics.map(h => <span key={h.id} className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-xs">{h.id}</span>)}
+                            </div>
+                          </td>
+                          <td className="py-3 px-2 text-xs text-slate-500 truncate">{t ? t.name : <span className="text-slate-400 italic">{errPhaseMeta.label}</span>}</td>
+                          <td className="py-3 px-2 text-center">
+                            <span className={`px-2 py-1 rounded-full text-xs ${SEVERITY_LEVELS[e.severity].color} ${SEVERITY_LEVELS[e.severity].textColor}`}>{e.severity}</span>
+                          </td>
+                          <td className="py-3 px-2 text-xs text-slate-600 text-center">{e.specificity != null ? e.specificity : '—'}</td>
+                          <td className="py-3 px-2 text-xs font-mono text-slate-600">{e.classification || '—'}</td>
+                          <td className="py-3 px-2 break-words">{e.description}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Exportação ──────────────────────────────────────────
+                Dois formatos, duas finalidades:
+                  · .xlsx  → dados tabulados, sem estilo, para análise.
+                  · PDF A4 → relatório Blau-styled (resumo + gráficos +
+                             ranking de relevância) aberto em nova aba
+                             para apresentar/arquivar.
+                Ambos vivem na mesma linha; "Enviar Resultados" segue
+                isolado abaixo para evitar disparo acidental. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4 shrink-0 py-1">
+              <button onClick={exportExcel} className={`${S.btn} ${S.btnHover} ${S.btnSecondary} ${S.btnSize} flex items-center justify-center gap-2`}>
+                <IconDownload /> Baixar .xlsx
+              </button>
+              <button onClick={exportPDF} className={`${S.btn} ${S.btnHover} ${S.btnOutline} ${S.btnSize} flex items-center justify-center gap-2`}>
+                <IconBook /> Relatório PDF
+              </button>
+            </div>
+            <div className="mt-3 shrink-0 py-1">
+              <button
+                onClick={sendResults}
+                disabled={sendStatus === 'sending' || sendStatus === 'sent'}
+                className={`w-full ${S.btn} ${S.btnHover} ${S.btnSize} flex items-center justify-center gap-2 ${
+                  sendStatus === 'sent'    ? 'bg-emerald-500 text-white' :
+                  sendStatus === 'sending' ? 'bg-blue-400 text-white'   :
+                  sendStatus === 'error'   ? 'bg-red-500 text-white'    : S.btnPrimary
+                }`}
+              >
+                {sendStatus === 'sent'    ? <IconCheckCircle /> :
+                 sendStatus === 'sending' ? <IconSpinner />     : <IconSend />}
+                {sendStatus === 'sent' ? 'Enviado!' : sendStatus === 'sending' ? 'Enviando…' : sendStatus === 'error' ? 'Tentar novamente' : 'Enviar Resultados'}
+              </button>
+            </div>
+
+            {/* Iniciar nova sessão — destrutivo, por isso visualmente separado */}
+            <div className="mt-3 shrink-0 py-1">
+              <button onClick={resetSession} className={`w-full ${S.btn} ${S.btnHover} ${S.btnDanger} ${S.btnSize} flex items-center justify-center gap-2`}>
+                <IconPlusSmall /> Iniciar Nova Sessão
+              </button>
+              <p className="text-xs text-slate-400 text-center mt-2">Apaga todos os dados da sessão atual e recomeça do zero.</p>
+            </div>
+          </div>
+        )}
+
+      </div>{/* end S.container */}
+
+      {/* ── FOOTER — Blau-style: border-top divider, calm centered text, blue accent ── */}
+      <div className="border-t border-slate-200 mt-4 shrink-0">
+        <div className="max-w-5xl mx-auto px-4 md:px-6 py-5 flex items-center justify-center gap-3 flex-wrap">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 opacity-60"></span>
+          <p className="text-xs md:text-sm text-slate-400 tracking-wide">
+            {CONFIG.version}{' '}
+            <a
+              href={CONFIG.authorUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="blau-footer-link font-semibold"
+            >
+              {CONFIG.author}
+            </a>
+          </p>
+        </div>
+      </div>
+
+      {/* ════════════════════════════════════
+          MODALS — rendered outside the container
+          so position:fixed backdrop covers the
+          full viewport without clipping.
+          ════════════════════════════════════ */}
+
+      {/* Heuristic detail modal — auto-height so short content doesn't leave empty space */}
+      {showHeuristicModal && (
+        <Modal size="auto" onClose={() => setShowHeuristicModal(null)}>
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 border-b border-slate-100 shrink-0">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <span className="text-blue-600 font-bold text-xs uppercase tracking-widest">{showHeuristicModal.id}</span>
+                <h3 className={`${S.heading2} mt-0.5`}>{showHeuristicModal.name}</h3>
+              </div>
+              <button onClick={() => setShowHeuristicModal(null)} className={`p-2 rounded-xl shrink-0 ${S.btn} hover:bg-slate-100`}><IconClose /></button>
+            </div>
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <p className={`${S.textBase} mb-6 leading-relaxed`}>{showHeuristicModal.description}</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Good example */}
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-emerald-600"><IconCheckCircle /></span>
+                  <p className="font-semibold text-emerald-700">Bom Exemplo</p>
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed">{showHeuristicModal.goodExample}</p>
+                {/* Expansor de imagem ocultado por CONFIG.showImageExamples
+                    — vire o flag para true em js/config.js quando adicionar imagens. */}
+                {CONFIG.showImageExamples && (
+                  <ImageExample src={showHeuristicModal.goodImage} label="Bom exemplo" theme="good" />
+                )}
+              </div>
+
+              {/* Bad example */}
+              <div className="p-4 rounded-xl bg-red-50 border border-red-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-red-500"><IconXCircle /></span>
+                  <p className="font-semibold text-red-600">Mau Exemplo</p>
+                </div>
+                <p className="text-sm text-slate-600 leading-relaxed">{showHeuristicModal.badExample}</p>
+                {CONFIG.showImageExamples && (
+                  <ImageExample src={showHeuristicModal.badImage} label="Mau exemplo" theme="bad" />
+                )}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Heuristics quick-reference modal */}
+      {showRefModal && (
+        <Modal onClose={() => setShowRefModal(false)}>
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 border-b border-slate-100 shrink-0">
+            <div className="flex items-center justify-between">
+              <h3 className={S.heading2}>Referência de Heurísticas</h3>
+              <button onClick={() => setShowRefModal(false)} className={`p-2 rounded-xl ${S.btn} hover:bg-slate-100`}><IconClose /></button>
+            </div>
+          </div>
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="space-y-3">
+              {heuristics.map(h => (
+                <div key={h.id} className={`${S.card} p-4`}>
+                  <div className="flex items-start gap-3">
+                    <span className="text-blue-600 font-bold shrink-0 mt-0.5">{h.id}</span>
+                    <div>
+                      <p className="font-semibold text-slate-700">{h.name}</p>
+                      <p className="text-sm text-slate-500 mt-1 leading-relaxed">{h.description}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Error log / edit modal */}
+      {showErrorModal && (() => {
+        // Resolve the context shown at the top of the modal
+        const editing  = editingError !== null ? errors[editingError] : null;
+        const ctxPhase = editing ? (editing.phase || 'exploratory') : phase;
+        const ctxTask  = editing
+          ? taskById(editing.taskId)
+          : (ctxPhase === 'tasks' ? taskById(pendingTaskId !== null ? pendingTaskId : activeTaskId) : null);
+        const meta     = EVALUATION_PHASES[ctxPhase];
+        // Only offer classifications that make sense for the active set:
+        // "common" is always available, "control"/"domain" only for their set.
+        const setType  = SET_TYPES[selectedSet] || 'control';
+        const availableClassifications = PROBLEM_CLASSIFICATIONS.filter(c =>
+          c.scope === 'common' || c.scope === setType
+        );
+        return (
+          <ErrorModal
+            heuristics={heuristics}
+            initial={editing}
+            classifications={availableClassifications}
+            context={{
+              phaseLabel:      meta.label,
+              phaseColor:      meta.color,
+              phaseDot:        meta.dotColor,
+              appName:         appMeta?.name || '',
+              setName:         HEURISTIC_SETS[selectedSet]?.name || '',
+              taskName:        ctxTask?.name || '',
+              taskDescription: ctxTask?.description || '',
+            }}
+            onClose={() => { setShowErrorModal(false); setEditingError(null); setPendingTaskId(null); }}
+            onSave={saveError}
+          />
+        );
+      })()}
+
+    </div>
+  );
+}
+
+// Mount the application
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+
+  </script>
+</body>
+</html>
